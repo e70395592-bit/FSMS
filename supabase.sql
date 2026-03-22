@@ -1,6 +1,7 @@
--- Create Profiles table (extending Supabase Auth)
+-- Create Profiles table (NOT linked to auth.users for easier testing/initial setup)
+-- In a production app, you would use: id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY
 CREATE TABLE public.profiles (
-  id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   name_en TEXT NOT NULL,
   role TEXT NOT NULL,

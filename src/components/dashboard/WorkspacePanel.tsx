@@ -77,40 +77,6 @@ export function WorkspacePanel() {
 
   const activeDoc = documents.find(d => d.id === activeDocId);
 
-  // Initialize with a mock document if none exists
-  useEffect(() => {
-    if (documents.length === 0) {
-      const initialContent = `
-        <h2>${t.objective}</h2>
-        <p>${t.objectiveText}</p>
-        <h2>${t.scope}</h2>
-        <p>${t.scopeText}</p>
-        <h2>${t.responsibilities}</h2>
-        <ul>
-          <li>${t.responsibility1}</li>
-          <li>${t.responsibility2}</li>
-          <li>${t.responsibility3}</li>
-        </ul>
-      `;
-      addDocument({
-        title: "إجراء معالجة عدم المطابقة",
-        titleEn: "Non-Conformance Handling Procedure",
-        type: "procedure",
-        typeEn: "Procedure",
-        version: "2.1",
-        status: "review",
-        progress: 67,
-        stakeholders: [
-          { id: "u1", name: "أحمد محمد", nameEn: "Ahmed Mohammed", role: "مدير الجودة", roleEn: "Quality Manager", status: "approved" },
-          { id: "u2", name: "سارة علي", nameEn: "Sara Ali", role: "مشرف الإنتاج", roleEn: "Production Supervisor", status: "approved" },
-          { id: "u3", name: "خالد سعيد", nameEn: "Khaled Saeed", role: "المدير العام", roleEn: "General Manager", status: "pending" },
-        ],
-        content: initialContent,
-        authorId: "u1",
-      });
-    }
-  }, [documents.length, addDocument, t]);
-
   // Set active doc when list updates
   useEffect(() => {
     if (documents.length > 0 && !activeDocId) {
@@ -162,7 +128,7 @@ export function WorkspacePanel() {
     }
   }, [activeDocId, currentUser.id, rejectReason, rejectDocument, isAr]);
 
-  const handleNewDocument = useCallback((typeId: string) => {
+  const handleNewDocument = useCallback(async (typeId: string) => {
     const docType = documentTypes.find(t => t.id === typeId);
     const newDoc = {
       title: isAr ? "مستند جديد" : "New Document",
@@ -176,10 +142,12 @@ export function WorkspacePanel() {
       content: "",
       authorId: currentUser.id,
     };
-    const id = addDocument(newDoc);
-    setActiveDocId(id);
-    setEditorContent("");
-    toast.info(isAr ? "تم إنشاء مستند جديد" : "New document created");
+    const id = await addDocument(newDoc);
+    if (id) {
+      setActiveDocId(id);
+      setEditorContent("");
+      toast.info(isAr ? "تم إنشاء مستند جديد" : "New document created");
+    }
   }, [isAr, currentUser.id, addDocument]);
 
   const toggleUserSelection = (userId: string) => {
