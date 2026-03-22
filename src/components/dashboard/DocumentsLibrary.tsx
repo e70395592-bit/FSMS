@@ -258,7 +258,7 @@ export function DocumentsLibrary() {
                   {isAr ? selectedDoc?.title : selectedDoc?.titleEn}
                 </DialogTitle>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1 sm:mt-2 text-xs sm:text-sm text-muted-foreground">
-                  <Badge variant="outline" className="text-[10px] sm:text-xs">{isAr ? selectedDoc?.typeEn : selectedDoc?.typeEn}</Badge>
+                  <Badge variant="outline" className="text-[10px] sm:text-xs">{isAr ? selectedDoc?.type : selectedDoc?.typeEn}</Badge>
                   <span className="hidden sm:inline">•</span>
                   <span>v{selectedDoc?.version}</span>
                   <span className="hidden sm:inline">•</span>
@@ -281,7 +281,7 @@ export function DocumentsLibrary() {
               {selectedDoc?.stakeholders && selectedDoc.stakeholders.length > 0 && (
                 <div className="mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-border/50">
                   <h4 className="text-base sm:text-lg font-semibold mb-4 flex items-center gap-2">
-                    <UsersIcon className="w-4 h-4 sm:w-5 h-5 text-primary" />
+                    <UsersIcon className="size-4 sm:size-5 text-primary" />
                     {isAr ? "سجل المراجعة والاعتماد" : "Review & Approval Trail"}
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
@@ -297,7 +297,7 @@ export function DocumentsLibrary() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 sm:gap-3">
-                            <div className="w-7 h-7 sm:w-8 h-8 rounded-full bg-background flex items-center justify-center text-[10px] sm:text-xs font-bold border border-border/50">
+                            <div className="size-7 sm:size-8 rounded-full bg-background flex items-center justify-center text-[10px] sm:text-xs font-bold border border-border/50">
                               {(isAr ? s.name : s.nameEn).charAt(0)}
                             </div>
                             <div>
@@ -307,24 +307,24 @@ export function DocumentsLibrary() {
                           </div>
                           {s.status === "approved" ? (
                             <Badge className="bg-success text-success-foreground gap-1 h-5 sm:h-6 text-[10px] sm:text-xs">
-                              <CheckCircle2 className="w-2.5 h-2.5 sm:w-3 h-3" />
+                              <CheckCircle2 className="size-2.5 sm:size-3" />
                               {isAr ? "وافق" : "Approved"}
                             </Badge>
                           ) : s.status === "rejected" ? (
                             <Badge variant="destructive" className="gap-1 h-5 sm:h-6 text-[10px] sm:text-xs">
-                              <XCircle className="w-2.5 h-2.5 sm:w-3 h-3" />
+                              <XCircle className="size-2.5 sm:size-3" />
                               {isAr ? "رفض" : "Rejected"}
                             </Badge>
                           ) : (
                             <Badge variant="secondary" className="gap-1 h-5 sm:h-6 text-[10px] sm:text-xs">
-                              <Clock className="w-2.5 h-2.5 sm:w-3 h-3" />
+                              <Clock className="size-2.5 sm:size-3" />
                               {isAr ? "قيد الانتظار" : "Pending"}
                             </Badge>
                           )}
                         </div>
                         {s.reason && (
                           <div className="p-2 bg-background/50 rounded-lg text-[10px] sm:text-xs flex gap-2 items-start border border-border/20">
-                            <MessageIcon className="w-2.5 h-2.5 sm:w-3 h-3 mt-0.5 text-muted-foreground shrink-0" />
+                            <MessageIcon className="size-2.5 sm:size-3 mt-0.5 text-muted-foreground shrink-0" />
                             <p className="text-muted-foreground italic leading-relaxed">
                               {s.reason}
                             </p>

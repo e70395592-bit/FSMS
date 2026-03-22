@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 export type DocumentStatus = "draft" | "review" | "approved" | "rejected";
 
@@ -64,7 +66,7 @@ interface AppContextType {
   currentUser: User;
   notifications: Notification[];
   users: User[];
-  addDocument: (doc: Omit<Document, "id" | "createdAt" | "updatedAt" | "history">) => string;
+  addDocument: (doc: Omit<Document, "id" | "createdAt" | "updatedAt" | "history">) => Promise<string>;
   updateDocument: (id: string, updates: Partial<Document>) => void;
   sendForApproval: (docId: string, stakeholderIds: string[]) => void;
   approveDocument: (docId: string, userId: string) => void;
@@ -87,171 +89,381 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentUser, setCurrentUser] = useState<User>(mockUsers[0]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [users, setUsers] = useState<User[]>(mockUsers);
+  const [loading, setLoading] = useState(true);
 
-  const addDocument = useCallback((doc: Omit<Document, "id" | "createdAt" | "updatedAt" | "history">) => {
-    const id = Math.random().toString(36).substr(2, 9);
-    const newDoc: Document = {
-      ...doc,
-      id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      history: [{
+  // Fetch initial data
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch documents
+      const { data: docs, error: docsError } = await supabase
+        .from('documents')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (docsError) throw docsError;
+      if (docs) setDocuments(docs.map(data => ({
+        id: data.id,
+        title: data.title,
+        titleEn: data.title_en,
+        type: data.type,
+        typeEn: data.type_en,
+        version: data.version,
+        status: data.status,
+        progress: data.progress,
+        stakeholders: data.stakeholders,
+        content: data.content,
+        authorId: data.author_id,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        history: data.history
+      })));
+
+      // Fetch profiles (users)
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('*');
+
+      if (profilesError) throw profilesError;
+      if (profiles && profiles.length > 0) {
+        const mappedUsers = profiles.map(p => ({
+          id: p.id,
+          name: p.name,
+          nameEn: p.name_en,
+          role: p.role,
+          roleEn: p.role_en,
+          email: p.email,
+          avatar: p.avatar_url
+        }));
+        setUsers(mappedUsers);
+        // Set current user if not already set or if it's the first fetch
+        if (!currentUser || currentUser.id.startsWith('u')) {
+          setCurrentUser(mappedUsers[0]);
+        }
+      }
+
+      // Fetch notifications
+      const { data: notes, error: notesError } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false });
+
+      if (notesError) throw notesError;
+      if (notes) setNotifications(notes.map(n => ({
+        id: n.id,
+        userId: n.user_id,
+        title: n.title,
+        titleEn: n.title_en,
+        message: n.message,
+        messageEn: n.message_en,
+        documentId: n.document_id,
+        type: n.type,
+        read: n.read,
+        createdAt: n.created_at
+      })));
+
+    } catch (error: any) {
+      console.error('Error fetching data:', error.message);
+      // Fallback to empty/mock if DB not setup yet
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser.id]);
+
+  useEffect(() => {
+    fetchData();
+    
+    // Subscribe to changes
+    const docsSubscription = supabase
+      .channel('public:documents')
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'documents' }, () => fetchData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(docsSubscription);
+    };
+  }, [fetchData]);
+
+  const addDocument = useCallback(async (doc: Omit<Document, "id" | "createdAt" | "updatedAt" | "history">) => {
+    try {
+      const newDoc = {
+        title: doc.title,
+        title_en: doc.titleEn,
+        type: doc.type,
+        type_en: doc.typeEn,
+        version: doc.version,
+        status: doc.status,
+        progress: doc.progress,
+        stakeholders: doc.stakeholders,
+        content: doc.content,
+        author_id: currentUser.id,
+        history: [{
+          version: doc.version,
+          date: new Date().toISOString(),
+          action: "إنشاء",
+          user: currentUser.name
+        }]
+      };
+
+      const { data, error } = await supabase
+        .from('documents')
+        .insert([newDoc])
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      // Map Supabase snake_case to CamelCase
+      const mappedDoc: Document = {
+        id: data.id,
+        title: data.title,
+        titleEn: data.title_en,
+        type: data.type,
+        typeEn: data.type_en,
+        version: data.version,
+        status: data.status,
+        progress: data.progress,
+        stakeholders: data.stakeholders,
+        content: data.content,
+        authorId: data.author_id,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        history: data.history
+      };
+
+      setDocuments(prev => [mappedDoc, ...prev]);
+      return mappedDoc.id;
+    } catch (error: any) {
+      console.error('Error adding document:', error.message);
+      toast.error("Failed to add document");
+      return "";
+    }
+  }, [currentUser]);
+
+  const updateDocument = useCallback(async (id: string, updates: Partial<Document>) => {
+    try {
+      const doc = documents.find(d => d.id === id);
+      if (!doc) return;
+
+      const newHistory = [...doc.history];
+      if (updates.content !== undefined) {
+        newHistory.unshift({
+          version: doc.version,
+          date: new Date().toISOString(),
+          action: "تعديل",
+          user: currentUser.name
+        });
+      }
+
+      // Map CamelCase to snake_case for DB
+      const dbUpdates: any = {
+        ...updates,
+        updated_at: new Date().toISOString(),
+        history: newHistory
+      };
+      
+      if (updates.titleEn) dbUpdates.title_en = updates.titleEn;
+      if (updates.typeEn) dbUpdates.type_en = updates.typeEn;
+      if (updates.authorId) dbUpdates.author_id = updates.authorId;
+      
+      // Remove CamelCase keys
+      delete dbUpdates.titleEn;
+      delete dbUpdates.typeEn;
+      delete dbUpdates.authorId;
+      delete dbUpdates.createdAt;
+      delete dbUpdates.updatedAt;
+
+      const { error } = await supabase
+        .from('documents')
+        .update(dbUpdates)
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates, history: newHistory } : d));
+    } catch (error: any) {
+      console.error('Error updating document:', error.message);
+      toast.error("Failed to update document");
+    }
+  }, [currentUser, documents]);
+
+  const sendForApproval = useCallback(async (docId: string, stakeholderIds: string[]) => {
+    try {
+      const doc = documents.find(d => d.id === docId);
+      if (!doc) return;
+
+      const newStakeholders: Stakeholder[] = stakeholderIds.map(id => {
+        const user = users.find(u => u.id === id)!;
+        return {
+          id: user.id,
+          name: user.name,
+          nameEn: user.nameEn,
+          role: user.role,
+          roleEn: user.roleEn,
+          status: "pending"
+        };
+      });
+
+      const newHistory = [{
         version: doc.version,
         date: new Date().toISOString(),
-        action: "إنشاء",
+        action: "إرسال للمراجعة",
         user: currentUser.name
-      }]
-    };
-    setDocuments(prev => [newDoc, ...prev]);
-    return id;
-  }, [currentUser]);
+      }, ...doc.history];
 
-  const updateDocument = useCallback((id: string, updates: Partial<Document>) => {
-    setDocuments(prev => prev.map(doc => {
-      if (doc.id === id) {
-        const newHistory = [...doc.history];
-        if (updates.content !== undefined) {
-          newHistory.unshift({
-            version: doc.version,
-            date: new Date().toISOString(),
-            action: "تعديل",
-            user: currentUser.name
-          });
-        }
-        return { ...doc, ...updates, history: newHistory, updatedAt: new Date().toISOString() };
+      const { error } = await supabase
+        .from('documents')
+        .update({
+          status: "review",
+          stakeholders: [...doc.stakeholders, ...newStakeholders],
+          history: newHistory,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      // Add notifications for stakeholders
+      const newNotifications = stakeholderIds.map(id => ({
+        user_id: id,
+        title: "طلب مراجعة مستند",
+        title_en: "Document Review Request",
+        message: `يرجى مراجعة المستند: ${doc.title}`,
+        message_en: `Please review document: ${doc.titleEn}`,
+        document_id: docId,
+        type: "info",
+        read: false
+      }));
+
+      await supabase.from('notifications').insert(newNotifications);
+      
+      await fetchData();
+    } catch (error: any) {
+      console.error('Error sending for approval:', error.message);
+      toast.error("Failed to send for approval");
+    }
+  }, [documents, currentUser, users, fetchData]);
+
+  const approveDocument = useCallback(async (docId: string, userId: string) => {
+    try {
+      const doc = documents.find(d => d.id === docId);
+      if (!doc) return;
+
+      const updatedStakeholders = doc.stakeholders.map(s => 
+        s.id === userId ? { ...s, status: "approved" as const } : s
+      );
+      const approvedCount = updatedStakeholders.filter(s => s.status === "approved").length;
+      const progress = Math.floor((approvedCount / updatedStakeholders.length) * 100);
+      const status = progress === 100 ? "approved" as const : "review" as const;
+
+      const newHistory = [{
+        version: doc.version,
+        date: new Date().toISOString(),
+        action: "موافقة",
+        user: currentUser.name
+      }, ...doc.history];
+
+      const { error } = await supabase
+        .from('documents')
+        .update({
+          stakeholders: updatedStakeholders,
+          progress,
+          status,
+          history: newHistory,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      // Notify author if approved
+      if (status === "approved") {
+        await supabase.from('notifications').insert([{
+          user_id: doc.authorId,
+          title: "تم اعتماد المستند",
+          title_en: "Document Approved",
+          message: `تم اعتماد المستند نهائياً: ${doc.title}`,
+          message_en: `Document fully approved: ${doc.titleEn}`,
+          document_id: docId,
+          type: "success",
+          read: false
+        }]);
       }
-      return doc;
-    }));
-  }, [currentUser]);
+      
+      await fetchData();
+    } catch (error: any) {
+      console.error('Error approving document:', error.message);
+      toast.error("Failed to approve document");
+    }
+  }, [currentUser, documents, fetchData]);
 
-  const sendForApproval = useCallback((docId: string, stakeholderIds: string[]) => {
-    const doc = documents.find(d => d.id === docId);
-    if (!doc) return;
+  const rejectDocument = useCallback(async (docId: string, userId: string, reason: string) => {
+    try {
+      const doc = documents.find(d => d.id === docId);
+      if (!doc) return;
 
-    const newStakeholders: Stakeholder[] = stakeholderIds.map(id => {
-      const user = mockUsers.find(u => u.id === id)!;
-      return {
-        id: user.id,
-        name: user.name,
-        nameEn: user.nameEn,
-        role: user.role,
-        roleEn: user.roleEn,
-        status: "pending"
-      };
-    });
+      const updatedStakeholders = doc.stakeholders.map(s => 
+        s.id === userId ? { ...s, status: "rejected" as const, reason } : s
+      );
 
-    const newHistory = [{
-      version: doc.version,
-      date: new Date().toISOString(),
-      action: "إرسال للمراجعة",
-      user: currentUser.name
-    }, ...doc.history];
+      const newHistory = [{
+        version: doc.version,
+        date: new Date().toISOString(),
+        action: "رفض",
+        user: currentUser.name
+      }, ...doc.history];
 
-    updateDocument(docId, {
-      status: "review",
-      stakeholders: [...doc.stakeholders, ...newStakeholders],
-      history: newHistory
-    });
+      const { error } = await supabase
+        .from('documents')
+        .update({
+          stakeholders: updatedStakeholders,
+          status: "rejected" as const,
+          history: newHistory,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', docId);
 
-    // Add notifications for stakeholders
-    const newNotifications: Notification[] = stakeholderIds.map(id => ({
-      id: Math.random().toString(36).substr(2, 9),
-      userId: id,
-      title: "طلب مراجعة مستند",
-      titleEn: "Document Review Request",
-      message: `يرجى مراجعة المستند: ${doc.title}`,
-      messageEn: `Please review document: ${doc.titleEn}`,
-      documentId: docId,
-      type: "info",
-      read: false,
-      createdAt: new Date().toISOString(),
-    }));
+      if (error) throw error;
 
-    setNotifications(prev => [...newNotifications, ...prev]);
-  }, [documents, updateDocument]);
-
-  const approveDocument = useCallback((docId: string, userId: string) => {
-    setDocuments(prev => prev.map(doc => {
-      if (doc.id === docId) {
-        const updatedStakeholders = doc.stakeholders.map(s => 
-          s.id === userId ? { ...s, status: "approved" as const } : s
-        );
-        const approvedCount = updatedStakeholders.filter(s => s.status === "approved").length;
-        const progress = Math.floor((approvedCount / updatedStakeholders.length) * 100);
-        const status = progress === 100 ? "approved" as const : "review" as const;
-
-        const newHistory = [{
-          version: doc.version,
-          date: new Date().toISOString(),
-          action: "موافقة",
-          user: currentUser.name
-        }, ...doc.history];
-
-        // Notify author if approved
-        if (status === "approved") {
-          const authorNotification: Notification = {
-            id: Math.random().toString(36).substr(2, 9),
-            userId: doc.authorId,
-            title: "تم اعتماد المستند",
-            titleEn: "Document Approved",
-            message: `تم اعتماد المستند نهائياً: ${doc.title}`,
-            messageEn: `Document fully approved: ${doc.titleEn}`,
-            documentId: docId,
-            type: "success",
-            read: false,
-            createdAt: new Date().toISOString(),
-          };
-          setNotifications(prev => [authorNotification, ...prev]);
-        }
-
-        return { ...doc, stakeholders: updatedStakeholders, progress, status, history: newHistory, updatedAt: new Date().toISOString() };
-      }
-      return doc;
-    }));
-  }, [currentUser]);
-
-  const rejectDocument = useCallback((docId: string, userId: string, reason: string) => {
-    setDocuments(prev => prev.map(doc => {
-      if (doc.id === docId) {
-        const updatedStakeholders = doc.stakeholders.map(s => 
-          s.id === userId ? { ...s, status: "rejected" as const, reason } : s
-        );
-
-        const newHistory = [{
-          version: doc.version,
-          date: new Date().toISOString(),
-          action: "رفض",
-          user: currentUser.name
-        }, ...doc.history];
-
-        // Notify author about rejection
-        const authorNotification: Notification = {
-          id: Math.random().toString(36).substr(2, 9),
-          userId: doc.authorId,
-          title: "تم رفض المستند",
-          titleEn: "Document Rejected",
-          message: `تم رفض المستند: ${doc.title}. السبب: ${reason}`,
-          messageEn: `Document rejected: ${doc.titleEn}. Reason: ${reason}`,
-          documentId: docId,
-          type: "error",
-          read: false,
-          createdAt: new Date().toISOString(),
-        };
-        setNotifications(prev => [authorNotification, ...prev]);
-
-        return { ...doc, stakeholders: updatedStakeholders, status: "rejected" as const, history: newHistory, updatedAt: new Date().toISOString() };
-      }
-      return doc;
-    }));
-  }, [currentUser]);
+      // Notify author about rejection
+      await supabase.from('notifications').insert([{
+        user_id: doc.authorId,
+        title: "تم رفض المستند",
+        title_en: "Document Rejected",
+        message: `تم رفض المستند: ${doc.title}. السبب: ${reason}`,
+        message_en: `Document rejected: ${doc.titleEn}. Reason: ${reason}`,
+        document_id: docId,
+        type: "error",
+        read: false
+      }]);
+      
+      await fetchData();
+    } catch (error: any) {
+      console.error('Error rejecting document:', error.message);
+      toast.error("Failed to reject document");
+    }
+  }, [currentUser, documents, fetchData]);
 
   const switchUser = useCallback((userId: string) => {
-    const user = mockUsers.find(u => u.id === userId);
+    const user = users.find(u => u.id === userId);
     if (user) setCurrentUser(user);
-  }, []);
+  }, [users]);
 
-  const markNotificationRead = useCallback((id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markNotificationRead = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', id);
+
+      if (error) throw error;
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    } catch (error: any) {
+      console.error('Error marking notification as read:', error.message);
+    }
   }, []);
 
   return (
@@ -259,7 +471,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       documents,
       currentUser,
       notifications,
-      users: mockUsers,
+      users,
       addDocument,
       updateDocument,
       sendForApproval,
