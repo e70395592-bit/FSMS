@@ -71,16 +71,15 @@ interface AppContextType {
   sendForApproval: (docId: string, stakeholderIds: string[]) => void;
   approveDocument: (docId: string, userId: string) => void;
   rejectDocument: (docId: string, userId: string, reason: string) => void;
+  resubmitDocument: (docId: string) => void;
   switchUser: (userId: string) => void;
   markNotificationRead: (id: string) => void;
 }
 
 const mockUsers: User[] = [
-  { id: "u1", name: "أحمد محمد", nameEn: "Ahmed Mohammed", role: "مدير الجودة", roleEn: "Quality Manager", email: "ahmed@company.sa" },
-  { id: "u2", name: "سارة علي", nameEn: "Sara Ali", role: "مشرف الإنتاج", roleEn: "Production Supervisor", email: "sara@company.sa" },
-  { id: "u3", name: "خالد سعيد", nameEn: "Khaled Saeed", role: "المدير العام", roleEn: "General Manager", email: "khaled@company.sa" },
-  { id: "u4", name: "ليلى أحمد", nameEn: "Layla Ahmed", role: "مسؤولة المختبر", roleEn: "Lab In-charge", email: "layla@company.sa" },
-  { id: "u5", name: "محمد حسن", nameEn: "Mohammed Hassan", role: "مدير الصيانة", roleEn: "Maintenance Manager", email: "mohammed@company.sa" },
+  { id: "00000000-0000-0000-0000-000000000001", name: "أحمد محمد", nameEn: "Ahmed Mohammed", role: "مدير الجودة", roleEn: "Quality Manager", email: "ahmed@company.sa" },
+  { id: "00000000-0000-0000-0000-000000000002", name: "سارة علي", nameEn: "Sara Ali", role: "مشرف الإنتاج", roleEn: "Production Supervisor", email: "sara@company.sa" },
+  { id: "00000000-0000-0000-0000-000000000003", name: "خالد سعيد", nameEn: "Khaled Saeed", role: "المدير العام", roleEn: "General Manager", email: "khaled@company.sa" },
 ];
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -97,10 +96,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       
-      // Fetch documents
+      // Fetch documents (only those authored by user OR where they are a stakeholder AND it's not a draft)
       const { data: docs, error: docsError } = await supabase
         .from('documents')
         .select('*')
+        .or(`author_id.eq.${currentUser.id},and(stakeholders.cs.[{"id": "${currentUser.id}"}],status.neq.draft)`)
         .order('updated_at', { ascending: false });
 
       if (docsError) throw docsError;
@@ -447,6 +447,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [currentUser, documents, fetchData]);
 
+  const resubmitDocument = useCallback(async (docId: string) => {
+    try {
+      const doc = documents.find(d => d.id === docId);
+      if (!doc) return;
+
+      // Reset rejected stakeholders to pending
+      const updatedStakeholders = doc.stakeholders.map(s => 
+        s.status === "rejected" ? { ...s, status: "pending" as const, reason: undefined } : s
+      );
+
+      const newHistory = [{
+        version: doc.version,
+        date: new Date().toISOString(),
+        action: "إعادة إرسال للمراجعة",
+        user: currentUser.name
+      }, ...doc.history];
+
+      const { error } = await supabase
+        .from('documents')
+        .update({
+          status: "review" as const,
+          stakeholders: updatedStakeholders,
+          history: newHistory,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', docId);
+
+      if (error) throw error;
+
+      // Notify stakeholders who were previously rejecting
+      const rejectedStakeholderIds = doc.stakeholders
+        .filter(s => s.status === "rejected")
+        .map(s => s.id);
+
+      const newNotifications = rejectedStakeholderIds.map(id => ({
+        user_id: id,
+        title: "إعادة إرسال مراجعة",
+        title_en: "Document Resubmitted",
+        message: `تم تحديث المستند: ${doc.title} وإعادة إرساله لمراجعتك.`,
+        message_en: `Document updated: ${doc.titleEn} and resubmitted for your review.`,
+        document_id: docId,
+        type: "info",
+        read: false
+      }));
+
+      if (newNotifications.length > 0) {
+        await supabase.from('notifications').insert(newNotifications);
+      }
+      
+      await fetchData();
+      toast.success(currentUser.nameEn === "Ahmed Mohammed" ? "Document resubmitted successfully" : "تم إعادة إرسال المستند بنجاح");
+    } catch (error: any) {
+      console.error('Error resubmitting document:', error.message);
+      toast.error("Failed to resubmit document");
+    }
+  }, [currentUser, documents, fetchData]);
+
   const switchUser = useCallback((userId: string) => {
     const user = users.find(u => u.id === userId);
     if (user) setCurrentUser(user);
@@ -477,6 +534,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sendForApproval,
       approveDocument,
       rejectDocument,
+      resubmitDocument,
       switchUser,
       markNotificationRead
     }}>

@@ -65,7 +65,8 @@ export function WorkspacePanel() {
     updateDocument, 
     sendForApproval, 
     approveDocument, 
-    rejectDocument 
+    rejectDocument,
+    resubmitDocument
   } = useAppContext();
 
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
@@ -390,10 +391,17 @@ export function WorkspacePanel() {
                               <Save className="w-4 h-4" />
                               {t.save}
                             </Button>
-                            <Button size="sm" className="gap-2 h-8" onClick={() => setIsSendDialogOpen(true)}>
-                              <Send className="w-4 h-4" />
-                              {t.sendForReview}
-                            </Button>
+                            {activeDoc.status === "rejected" ? (
+                              <Button size="sm" className="gap-2 h-8 bg-primary" onClick={() => resubmitDocument(activeDocId)}>
+                                <Send className="w-4 h-4" />
+                                {isAr ? "إعادة إرسال للمراجعة" : "Resubmit for Review"}
+                              </Button>
+                            ) : (
+                              <Button size="sm" className="gap-2 h-8" onClick={() => setIsSendDialogOpen(true)}>
+                                <Send className="w-4 h-4" />
+                                {t.sendForReview}
+                              </Button>
+                            )}
                           </>
                         )}
                       </div>
