@@ -25,6 +25,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -69,6 +70,8 @@ export function WorkspacePanel() {
 
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState<string>("");
+  const [docTitle, setDocTitle] = useState<string>("");
+  const [docTitleEn, setDocTitleEn] = useState<string>("");
   const [isSendDialogOpen, setIsSendDialogOpen] = useState(false);
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
@@ -82,6 +85,8 @@ export function WorkspacePanel() {
     if (documents.length > 0 && !activeDocId) {
       setActiveDocId(documents[0].id);
       setEditorContent(documents[0].content);
+      setDocTitle(documents[0].title);
+      setDocTitleEn(documents[0].titleEn);
     }
   }, [documents, activeDocId]);
 
@@ -89,19 +94,29 @@ export function WorkspacePanel() {
   useEffect(() => {
     if (activeDoc) {
       setEditorContent(activeDoc.content);
+      setDocTitle(activeDoc.title);
+      setDocTitleEn(activeDoc.titleEn);
     }
   }, [activeDocId]);
 
   const handleSave = useCallback(() => {
     if (activeDocId && activeDoc) {
-      if (editorContent === activeDoc.content) {
+      if (!docTitle.trim() || !docTitleEn.trim()) {
+        toast.error(isAr ? "يرجى إدخال عنوان المستند باللغتين" : "Please enter document title in both languages");
+        return;
+      }
+      if (editorContent === activeDoc.content && docTitle === activeDoc.title && docTitleEn === activeDoc.titleEn) {
         toast.info(isAr ? "لا توجد تغييرات لحفظها" : "No changes to save");
         return;
       }
-      updateDocument(activeDocId, { content: editorContent });
+      updateDocument(activeDocId, { 
+        content: editorContent,
+        title: docTitle,
+        titleEn: docTitleEn
+      });
       toast.success(isAr ? "تم حفظ المستند بنجاح" : "Document saved successfully");
     }
-  }, [activeDocId, activeDoc, editorContent, updateDocument, isAr]);
+  }, [activeDocId, activeDoc, editorContent, docTitle, docTitleEn, updateDocument, isAr]);
 
   const handleSendForReview = useCallback(() => {
     if (activeDocId && selectedUsers.length > 0) {
@@ -146,6 +161,8 @@ export function WorkspacePanel() {
     if (id) {
       setActiveDocId(id);
       setEditorContent("");
+      setDocTitle(isAr ? "مستند جديد" : "New Document");
+      setDocTitleEn("New Document");
       toast.info(isAr ? "تم إنشاء مستند جديد" : "New document created");
     }
   }, [isAr, currentUser.id, addDocument]);
@@ -312,16 +329,37 @@ export function WorkspacePanel() {
                 </TabsList>
 
                 <TabsContent value="editor" className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl border border-border/40">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-secondary/30 rounded-xl border border-border/40 gap-4">
+                    <div className="flex items-center gap-4 flex-grow">
+                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                         <FileText className="w-5 h-5 text-primary" />
                       </div>
-                      <div>
-                        <h4 className="font-medium text-foreground">
-                          {isAr ? activeDoc.title : activeDoc.titleEn}
-                        </h4>
-                        <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                      <div className="flex flex-col gap-2 flex-grow max-w-2xl">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground font-medium px-1">
+                              {isAr ? "العنوان (بالعربية)" : "Title (Arabic)"}
+                            </label>
+                            <Input 
+                              value={docTitle} 
+                              onChange={(e) => setDocTitle(e.target.value)}
+                              className="h-8 text-sm bg-background/50"
+                              placeholder={isAr ? "العنوان بالعربية" : "Arabic Title"}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-muted-foreground font-medium px-1">
+                              {isAr ? "العنوان (بالإنجليزية)" : "Title (English)"}
+                            </label>
+                            <Input 
+                              value={docTitleEn} 
+                              onChange={(e) => setDocTitleEn(e.target.value)}
+                              className="h-8 text-sm bg-background/50"
+                              placeholder={isAr ? "العنوان بالإنجليزية" : "English Title"}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
                           <span>{isAr ? activeDoc.typeEn : activeDoc.typeEn}</span>
                           <span>•</span>
                           <span>{t.versionLabel} {activeDoc.version}</span>
@@ -329,7 +367,7 @@ export function WorkspacePanel() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                       <Badge className={statusStyles[activeDoc.status].className}>
                         {statusStyles[activeDoc.status].label}
                       </Badge>
